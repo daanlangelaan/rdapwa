@@ -1,0 +1,74 @@
+:root{
+  --bg:#0b1020; --card:#111729; --muted:#94a3b8; --text:#e5e7eb; --accent:#6ee7b7; --accent-2:#60a5fa;
+  --border:rgba(255,255,255,.08);
+}
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{margin:0;background:linear-gradient(180deg,#0b1020, #0f172a 50%, #0b1020); color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+}
+
+/* Layout */
+.app{min-height:100%; display:flex; flex-direction:column;}
+.topbar{position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:space-between;
+  padding:12px 16px; background:rgba(16,24,40,.7); backdrop-filter: blur(8px); border-bottom:1px solid var(--border);}
+.brand{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px}
+.brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent); box-shadow:0 0 24px var(--accent);}
+.top-actions .pill{font-size:12px; padding:6px 10px; border:1px solid var(--border); border-radius:999px; color:#cbd5e1}
+
+.content{flex:1; padding-bottom:72px;}
+.page{max-width:980px; margin: 10px auto; padding: 0 12px 80px;}
+
+/* Cards */
+.card{background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.02));
+  border:1px solid var(--border); border-radius:16px; padding:14px; box-shadow: 0 6px 20px rgba(0,0,0,.25); margin-bottom:12px;}
+.card-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px}
+.card h2{margin:0;font-size:18px}
+.card .sub{font-size:12px; color:var(--muted)}
+.card-body{display:block}
+
+/* Controls */
+.lbl{display:block; font-size:12px; color:var(--muted); margin:6px 0 6px}
+.select,.input,.area{
+  width:100%; background:#0b1324; color:var(--text); border:1px solid var(--border);
+  padding:10px 12px; border-radius:12px; outline:none;
+}
+.area{min-height:96px}
+.input:focus, .select:focus, .area:focus{border-color:#334155; box-shadow:0 0 0 4px rgba(96,165,250,.12)}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+@media (max-width: 780px){ .grid2{grid-template-columns:1fr} }
+
+.btnrow{display:flex; gap:8px; margin:10px 0;}
+.btn{
+  appearance:none; border:none; border-radius:12px; padding:11px 16px; cursor:pointer;
+  background:#0b1324; color:#e5e7eb; border:1px solid var(--border);
+  transition:transform .06s ease, box-shadow .2s ease;
+}
+.btn:hover{transform:translateY(-1px); box-shadow:0 10px 20px rgba(0,0,0,.25)}
+.btn:active{transform:translateY(0)}
+.btn.primary{background:linear-gradient(90deg, var(--accent), var(--accent-2)); color:#0b1020; font-weight:700; border: none;}
+.btn.ghost{background:transparent; border:1px dashed var(--border); color:#cbd5e1}
+
+.timer{font: 700 28px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align:center; margin:12px 0}
+.hint,.muted{color:var(--muted); font-size:12px}
+
+/* Legs list */
+.leglist{display:grid; grid-template-columns: repeat(auto-fill, minmax(240px,1fr)); gap:10px}
+.legcard{background:#0b1324; border:1px solid var(--border); border-radius:14px; padding:12px; display:flex; align-items:center; justify-content:space-between}
+.legcard .title{font-weight:600}
+.badge{font-size:12px; background:#111827; padding:6px 10px; border-radius:999px; border:1px solid var(--border);}
+
+/* Quick project bar */
+.quickbar{position:sticky; top:56px; z-index:40; background:rgba(11,16,32,.7); backdrop-filter: blur(8px);
+  border-bottom:1px solid var(--border); padding:10px 12px; display:flex; gap:8px; align-items:center}
+.quickbar .select{max-width:260px}
+
+/* Tab bar (mobile) */
+.tabbar{
+  position:fixed; bottom:0; left:0; right:0; height:64px; background:rgba(11,19,36,.95);
+  border-top:1px solid var(--border); display:flex; justify-content:space-around; align-items:center;
+  backdrop-filter: blur(8px);
+}
+.tab{color:#cbd5e1; text-decoration:none; display:flex; flex-direction:column; align-items:center; gap:4px; font-size:12px; padding:6px 10px; border-radius:10px}
+.tab .ico{font-size:18px}
+.tab.active{color:#0b1020; background:linear-gradient(90deg, var(--accent), var(--accent-2)); font-weight:700}
