@@ -11,6 +11,10 @@ export default function BottomNav() {
         <span className="ico">🧾</span>
         <span>Receipts</span>
       </NavLink>
+      <NavLink to="/daylog" className={({isActive}) => "tab" + (isActive ? " active" : "")}>
+        <span className="ico">📅</span>
+        <span>Day Log</span>
+      </NavLink>
       <NavLink to="/settings" className={({isActive}) => "tab" + (isActive ? " active" : "")}>
         <span className="ico">⚙️</span>
         <span>Settings</span>

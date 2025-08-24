@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import Home from "./pages/Home.jsx";
-import Receipts from "./pages/Receipts.jsx";
-import Settings from "./pages/Settings.jsx";
-import Header from "./components/Header.jsx";
-import BottomNav from "./components/BottomNav.jsx";
+import Home from "./pages/Home";
+import Receipts from "./pages/Receipts";
+import Settings from "./pages/Settings";
+import DayLog from "./pages/DayLog";
+import Header from "./components/Header";
+import BottomNav from "./components/BottomNav";
 import "./index.css";
 
 function Layout() {
@@ -15,6 +16,7 @@ function Layout() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/receipts" element={<Receipts />} />
+          <Route path="/daylog" element={<DayLog />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
