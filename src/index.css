@@ -72,3 +72,99 @@ body{margin:0;background:linear-gradient(180deg,#0b1020, #0f172a 50%, #0b1020); 
 .tab{color:#cbd5e1; text-decoration:none; display:flex; flex-direction:column; align-items:center; gap:4px; font-size:12px; padding:6px 10px; border-radius:10px}
 .tab .ico{font-size:18px}
 .tab.active{color:#0b1020; background:linear-gradient(90deg, var(--accent), var(--accent-2)); font-weight:700}
+/* Popup overlay */
+.popup-mask{
+  position:fixed; inset:0; background:rgba(0,0,0,.5);
+  display:flex; align-items:center; justify-content:center; z-index:1000;
+}
+.popup-panel{
+  width:min(720px, 94vw);
+  max-height:90vh;
+  overflow:auto;
+}
+/* Opaque, fullscreen popup — laat ruimte voor bottom nav (64px) */
+.popup-mask.full-opaque{
+  position: fixed;
+  left: 0; right: 0; top: 0; bottom: 64px; /* pas aan naar jouw bottom-nav hoogte */
+  background: #ffffff; /* niet doorzichtig */
+  z-index: 1000;
+  display: flex; align-items: stretch; justify-content: center;
+}
+.popup-panel.fullscreen-minus-bottom{
+  width: 100%;
+  max-width: 980px;
+  height: 100%;
+  overflow: auto;
+  padding: 12px;
+}
+/* Fullscreen, ondoorzichtige popup (ruimte voor bottom nav) */
+.popup-mask.full-opaque{
+  position: fixed;
+  left: 0; right: 0; top: 0; bottom: 64px;  /* pas aan aan jouw bottom-nav hoogte */
+  background: #0b1020;                      /* zelfde donkere achtergrond als app */
+  z-index: 1000;
+  display: flex; align-items: stretch; justify-content: center;
+}
+.popup-panel.fullscreen-minus-bottom{
+  width: 100%;
+  max-width: 980px;
+  height: 100%;
+  overflow: auto;
+  padding: 12px;
+}
+
+/* Disabled select dezelfde look & feel als enabled */
+.select[disabled]{
+  opacity: 1;
+  background: #0f172a;
+  color: #cbd5e1;
+  border-color: rgba(148,163,184,.25);
+  cursor: not-allowed;
+}
+/* Kleinere UI accentjes voor item-lijst */
+.badge{background:#0ea5e9;color:#031526;border-radius:999px;padding:.15rem .5rem;font-weight:700;font-size:.75rem}
+/* Receipts layout */
+.receipt-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.receipt-card{
+  background: rgba(148,163,184,.07);
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 16px;
+  padding: 10px;
+}
+.rc-head{
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom: 6px;
+}
+.rc-imgwrap{
+  background:#0f172a; border:1px solid rgba(148,163,184,.18);
+  border-radius: 12px; padding: 8px; display:flex; justify-content:center;
+}
+.rc-imgwrap img{max-width:100%; height:auto; display:block;}
+.rc-raw{
+  white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; background: #0b1020; color: #cbd5e1;
+  border: 1px solid rgba(148,163,184,.18); padding: 8px; border-radius: 8px;
+  margin-top: 6px;
+}
+/* Camera */
+.camera-view{
+  background:#0f172a;
+  border:1px solid rgba(148,163,184,.18);
+  border-radius:12px;
+  padding:8px;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:200px;
+}
+.camera-view video,
+.camera-view img{
+  max-width:100%;
+  height:auto;
+  display:block;
+  border-radius:8px;
+}
