@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import Card from "../components/Card";
 
-const LOG_KEY = "rda.daylog.v1";
-const fmt = (ms) => {
+const DAYLOG_KEY = "rda.daylog.v1";
+
+const fmtClock = (ms) => {
   const s = Math.max(0, Math.floor(ms / 1000));
   const hh = String(Math.floor(s / 3600)).padStart(2, "0");
   const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
@@ -9,63 +11,97 @@ const fmt = (ms) => {
   return `${hh}:${mm}:${ss}`;
 };
 
-const loadLog = () => {
-  try { return JSON.parse(localStorage.getItem(LOG_KEY) || "[]"); }
-  catch { return []; }
-};
-
 export default function DayLog() {
-  const items = loadLog();
+  const [log, setLog] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(DAYLOG_KEY) || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  // herlaad wanneer storage elders wijzigt (end day)
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === DAYLOG_KEY) {
+        try {
+          setLog(JSON.parse(e.newValue || "[]"));
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   return (
     <div className="page">
-      <Card title="Day log" subtitle="Closed days (local only)" wide>
-        {items.length === 0 ? (
-          <div className="muted">No closed days yet.</div>
+      <Card title="Day log" subtitle="Gesloten dagen met activiteiten en trips" wide>
+        {log.length === 0 ? (
+          <div className="muted">Nog geen daglogs opgeslagen.</div>
         ) : (
-          <div className="leglist">
-            {items.map(entry => (
-              <div key={entry.id} className="legcard" style={{flexDirection:"column", alignItems:"stretch"}}>
-                <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                  <div className="title">{entry.date} • {entry.project}</div>
-                  <div className="badge">Total {fmt(entry.summary.totalMs || entry.summary.totalMs === 0 ? entry.summary.totalMs : entry.summary.total)}</div>
+          log.map((entry) => (
+            <div key={entry.id} style={{ marginBottom: 12 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 6,
+                }}
+              >
+                <div className="title">
+                  {entry.date} • {entry.project}
                 </div>
+                <span className="badge">Total {fmtClock(entry.totalMs || 0)}</span>
+              </div>
 
-                {/* Activities with items */}
-                <div style={{marginTop:8}}>
-                  {Object.entries(entry.summary.perActivity || {}).map(([name, val]) => (
-                    <div key={name} style={{marginBottom:8}}>
-                      <div style={{fontWeight:600}}>{name} — {fmt(val.ms || 0)}</div>
-                      {(val.items && val.items.length > 0) ? (
-                        <ul style={{margin:0, paddingLeft:18}}>
-                          {val.items.map(it => (
-                            <li key={it.id}>
-                              {it.title} — {it.minutes} min • {it.wbso ? "WBSO" : "non-WBSO"} • {it.billable ? "billable" : "non-billable"}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="muted">No items</div>
-                      )}
+              {/* activities */}
+              {Object.entries(entry.perActivity || {}).map(([name, data]) => (
+                <div key={name} style={{ marginLeft: 6, marginBottom: 6 }}>
+                  <div style={{ fontWeight: 600 }}>
+                    {name} — {fmtClock(data?.ms || 0)}
+                  </div>
+                  {(data?.items?.length || 0) === 0 ? (
+                    <div className="muted" style={{ marginLeft: 12 }}>
+                      No items
                     </div>
-                  ))}
+                  ) : (
+                    <ul style={{ marginTop: 2, marginBottom: 0 }}>
+                      {data.items.map((it) => (
+                        <li key={it.id}>
+                          {it.title || "(no title)"} — {it.minutes} min{" "}
+                          {it.billable ? "• billable" : "• non-billable"}
+                          {it.wbso ? " • WBSO" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
+              ))}
 
-                {/* Trips */}
-                <div style={{marginTop:8, fontWeight:600}}>Trips</div>
-                {entry.legs.length === 0 ? (
-                  <div className="muted">No trips</div>
+              {/* trips */}
+              <div style={{ marginTop: 8, marginLeft: 6 }}>
+                <div style={{ fontWeight: 600 }}>Trips</div>
+                {(entry.trips || []).length === 0 ? (
+                  <div className="muted" style={{ marginLeft: 12 }}>
+                    No trips
+                  </div>
                 ) : (
-                  <ul style={{margin:0, paddingLeft:18}}>
-                    {entry.legs.map((l, i) => (
-                      <li key={l.id}>
-                        Leg {i+1} • {l.date} • {l.km?.toFixed(1)} km
+                  <ul style={{ marginTop: 2, marginBottom: 0 }}>
+                    {entry.trips.map((leg, idx) => (
+                      <li key={leg.id || idx}>
+                        Leg {idx + 1} • {leg.date || ""} • {leg.km?.toFixed ? leg.km.toFixed(1) : leg.km} km
+                        {leg.startName ? ` • ${leg.startName}` : ""}{" "}
+                        {leg.endName ? `→ ${leg.endName}` : ""}
                       </li>
                     ))}
                   </ul>
                 )}
               </div>
-            ))}
-          </div>
+
+              <hr style={{ borderColor: "rgba(148,163,184,.18)", marginTop: 10 }} />
+            </div>
+          ))
         )}
       </Card>
     </div>

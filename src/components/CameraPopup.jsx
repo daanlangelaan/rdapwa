@@ -4,64 +4,77 @@ import Card from "./Card";
 export default function CameraPopup({ onClose, onCapture }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+
   const [stream, setStream] = useState(null);
   const [devices, setDevices] = useState([]);
   const [deviceId, setDeviceId] = useState(null);
   const [error, setError] = useState("");
   const [snapDataUrl, setSnapDataUrl] = useState("");
+  const [askedOnce, setAskedOnce] = useState(false);
+
+  // Enumerate devices (kan zonder permissie, maar labels zijn dan vaak leeg)
+  const enumerateDevices = async () => {
+    try {
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      const cams = devs.filter((d) => d.kind === "videoinput");
+      setDevices(cams);
+      const env = cams.find((d) => /back|rear|environment/i.test(d.label));
+      setDeviceId((env || cams[0] || {}).deviceId || null);
+    } catch (e) {
+      setError("Kon camera-apparaten niet ophalen.");
+    }
+  };
 
   useEffect(() => {
-    let active = true;
-
-    const enumerate = async () => {
-      try {
-        const devs = await navigator.mediaDevices.enumerateDevices();
-        const cams = devs.filter((d) => d.kind === "videoinput");
-        if (!active) return;
-        setDevices(cams);
-        // kies achtercamera als beschikbaar
-        const env = cams.find((d) => /back|rear|environment/i.test(d.label));
-        setDeviceId((env || cams[0] || {}).deviceId || null);
-      } catch (e) {
-        setError("Geen camera-apparaten gevonden of geen permissie.");
-      }
-    };
-
-    enumerate();
-    return () => { active = false; };
+    enumerateDevices();
+    return () => stopCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    // start stream zodra er een device gekozen is
     if (!deviceId) return;
-    startCamera(deviceId);
-    return () => stopCamera();
+    if (stream) stopCamera();
+    // probeer meteen te starten; als permissie geblokt is, tonen we een knop hieronder
+    startCamera(deviceId).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId]);
 
   const startCamera = async (id) => {
-    stopCamera();
     setError("");
-    try {
-      const st = await navigator.mediaDevices.getUserMedia({
-        video: id ? { deviceId: { exact: id } } : { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      setStream(st);
-      if (videoRef.current) {
-        videoRef.current.srcObject = st;
-        await videoRef.current.play();
-      }
-    } catch (e) {
-      setError("Camera start mislukt. Toegang toegestaan? (localhost/HTTPS vereist)");
+    const constraints = id
+      ? { video: { deviceId: { exact: id } }, audio: false }
+      : { video: { facingMode: { ideal: "environment" } }, audio: false };
+
+    const st = await navigator.mediaDevices.getUserMedia(constraints);
+    setStream(st);
+
+    const v = videoRef.current;
+    if (v) {
+      v.srcObject = st;
+      // Autoplay werkt alleen na user-gesture in sommige browsers,
+      // maar we hebben sowieso een klik op "Take photo".
+      try { await v.play(); } catch {}
     }
   };
 
   const stopCamera = () => {
-    try {
-      stream?.getTracks()?.forEach((t) => t.stop());
-    } catch {}
+    try { stream?.getTracks()?.forEach((t) => t.stop()); } catch {}
     setStream(null);
+  };
+
+  // Dwing expliciet permissie prompt af
+  const requestPermission = async () => {
+    setError("");
+    setAskedOnce(true);
+    try {
+      await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      await enumerateDevices();
+      await startCamera(deviceId); // start met huidig gekozen device
+    } catch (e) {
+      setError(
+        "Camera-toegang is geblokkeerd. Sta 'Camera' toe voor deze site (klik op het slotje links van de URL) of controleer Windows privacy-instellingen."
+      );
+    }
   };
 
   const takePhoto = () => {
@@ -81,9 +94,11 @@ export default function CameraPopup({ onClose, onCapture }) {
   const usePhoto = () => {
     if (!snapDataUrl) return;
     stopCamera();
-    onCapture(snapDataUrl); // levert dataURL terug aan ouder
+    onCapture(snapDataUrl);
     onClose();
   };
+
+  const noStream = !stream;
 
   return (
     <div className="popup-mask full-opaque">
@@ -91,31 +106,51 @@ export default function CameraPopup({ onClose, onCapture }) {
         <Card title="Camera" subtitle="Maak een foto van de bon" wide>
           {error && <div className="muted" style={{ color: "#f88" }}>{error}</div>}
 
+          <div className="grid2">
+            <div>
+              <label className="lbl">Camera</label>
+              <select
+                className="select"
+                value={deviceId || ""}
+                onChange={(e) => setDeviceId(e.target.value)}
+              >
+                {devices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || "Camera"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {!snapDataUrl ? (
             <>
-              <div className="grid2">
-                <div>
-                  <label className="lbl">Camera</label>
-                  <select
-                    className="select"
-                    value={deviceId || ""}
-                    onChange={(e) => setDeviceId(e.target.value)}
-                  >
-                    {devices.map((d) => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label || "Camera"}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="camera-view">
+                {/* Autoplay + muted + playsInline helpen op mobiel */}
+                <video ref={videoRef} autoPlay playsInline muted />
               </div>
 
-              <div className="camera-view">
-                <video ref={videoRef} playsInline muted />
-              </div>
+              {noStream && (
+                <div className="muted" style={{ marginTop: 8 }}>
+                  Zie je geen beeld of geen prompt? Klik hieronder om een permissie-vraag te forceren.
+                  {askedOnce ? (
+                    <div style={{ marginTop: 6 }}>
+                      • Check ook <b>Site permissions</b> → Camera = Allow. <br />
+                      • Windows: Instellingen → Privacy & Security → <b>Camera</b> → toestaan voor desktop-apps/Edge.
+                    </div>
+                  ) : null}
+                </div>
+              )}
 
               <div className="btnrow">
-                <button className="btn primary" onClick={takePhoto}>📸 Take photo</button>
+                {noStream && (
+                  <button className="btn" onClick={requestPermission}>
+                    🔓 Enable camera (ask permission)
+                  </button>
+                )}
+                <button className="btn primary" onClick={takePhoto}>
+                  📸 Take photo
+                </button>
                 <button className="btn ghost" onClick={onClose}>Cancel</button>
               </div>
             </>
