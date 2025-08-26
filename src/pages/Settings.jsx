@@ -1,221 +1,109 @@
+import { useEffect, useState } from "react";
 import Card from "../components/Card";
-import { useState, useEffect } from "react";
+import { getCurrentUser } from "../lib/users";
+import { keys } from "../lib/ns";
 
-/* ---- persistence helpers ---- */
-const LS_KEY = "rda.favorites";
-const loadFavorites = () => {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }
-  catch { return []; }
+const fmtClock = (ms) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
 };
-const saveFavorites = (list) => {
-  localStorage.setItem(LS_KEY, JSON.stringify(list));
-};
 
-export default function Settings() {
-  // demo rates (unchanged)
-  const [rateHour, setRateHour] = useState(95);
-  const [rateKm, setRateKm] = useState(0.23);
+export default function DayLog() {
+  const user = getCurrentUser();
+  const DAYLOG_KEY = keys.daylog(user.id);
 
-  // favorites
-  const [favorites, setFavorites] = useState(loadFavorites());
+  const [log, setLog] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(DAYLOG_KEY) || "[]"); }
+    catch { return []; }
+  });
 
   useEffect(() => {
-    // reload if user came back to tab
-    const onShow = () => setFavorites(loadFavorites());
-    document.addEventListener("visibilitychange", onShow);
-    return () => document.removeEventListener("visibilitychange", onShow);
-  }, []);
-
-  // form state for new favorite
-  const [mode, setMode] = useState("gps"); // "gps" | "manual"
-  const [name, setName] = useState("");
-  const [lat, setLat] = useState("");
-  const [lon, setLon] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-
-  const pickGPS = async () => {
-    setMsg("");
-    if (!("geolocation" in navigator)) {
-      setMsg("Geolocation not available in this browser.");
-      return;
-    }
-    setBusy(true);
-    navigator.geolocation.getCurrentPosition(
-      (p) => {
-        setLat(p.coords.latitude.toFixed(6));
-        setLon(p.coords.longitude.toFixed(6));
-        setBusy(false);
-      },
-      (err) => {
-        setMsg("Could not get position.");
-        setBusy(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  };
-
-  const addFavorite = () => {
-    setMsg("");
-    const nm = name.trim();
-    const la = parseFloat(String(lat).replace(",", "."));
-    const lo = parseFloat(String(lon).replace(",", "."));
-
-    if (!nm) return setMsg("Please enter a name.");
-    if (Number.isNaN(la) || Number.isNaN(lo)) return setMsg("Lat/Lon are required numbers.");
-
-    const newFav = { id: crypto.randomUUID(), name: nm, lat: la, lon: lo };
-    const next = [...favorites, newFav];
-    setFavorites(next);
-    saveFavorites(next);
-
-    // reset form
-    setName("");
-    setLat("");
-    setLon("");
-    setMode("gps");
-    setMsg("Saved ✔");
-  };
-
-  const removeFavorite = (id) => {
-    const next = favorites.filter((f) => f.id !== id);
-    setFavorites(next);
-    saveFavorites(next);
-  };
+    const onStorage = (e) => {
+      if (e.key === DAYLOG_KEY) {
+        try { setLog(JSON.parse(e.newValue || "[]")); } catch {}
+      }
+    };
+    const onUser = () => window.location.reload();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("rda:userChanged", onUser);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("rda:userChanged", onUser);
+    };
+  }, [DAYLOG_KEY]);
 
   return (
     <div className="page">
-      <Card title="Rates" subtitle="Defaults per project">
-        <div className="grid2">
-          <div>
-            <label className="lbl">Rate/hour</label>
-            <input
-              className="input"
-              type="number"
-              step="0.01"
-              value={rateHour}
-              onChange={(e) => setRateHour(+e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="lbl">Rate/km</label>
-            <input
-              className="input"
-              type="number"
-              step="0.01"
-              value={rateKm}
-              onChange={(e) => setRateKm(+e.target.value)}
-            />
-          </div>
-        </div>
-      </Card>
+      <Card title="Day log" subtitle={`Closed days for ${user.name}`} wide>
+        {log.length === 0 ? (
+          <div className="muted">Nog geen daglogs opgeslagen.</div>
+        ) : (
+          log.map((entry) => {
+            const perActivity = entry.perActivity || {};
+            const nonEmpty = Object.entries(perActivity).filter(([, d]) => (d?.ms || 0) > 0 || (d?.items?.length || 0) > 0);
+            const trips = entry.trips || [];
+            const receipts = entry.receipts || [];
+            const sumReceipts = receipts.reduce((a, r) => a + (Number(r.total) || 0), 0);
 
-      <Card title="Favorite locations" subtitle="Use these in Start/End dropdowns" wide>
-        {/* Add new favorite */}
-        <div style={{ display: "grid", gap: 10 }}>
-          <div className="grid2">
-            <div>
-              <label className="lbl">Name</label>
-              <input
-                className="input"
-                placeholder="e.g. Kantoor/Rosa, Huis Daan"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="lbl">Mode</label>
-              <select
-                className="select"
-                value={mode}
-                onChange={(e) => setMode(e.target.value)}
-              >
-                <option value="gps">Use current GPS</option>
-                <option value="manual">Manual lat/lon</option>
-              </select>
-            </div>
-          </div>
+            return (
+              <div key={entry.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div className="title">{entry.date} • {entry.project}</div>
+                  <span className="badge">Total {fmtClock(entry.totalMs || 0)}</span>
+                  {receipts.length > 0 && <span className="badge">Receipts € {sumReceipts.toFixed(2)}</span>}
+                </div>
 
-          {mode === "gps" ? (
-            <div className="grid2">
-              <div>
-                <label className="lbl">Latitude</label>
-                <input
-                  className="input"
-                  placeholder="press Get current GPS"
-                  value={lat}
-                  onChange={(e) => setLat(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="lbl">Longitude</label>
-                <input
-                  className="input"
-                  placeholder="press Get current GPS"
-                  value={lon}
-                  onChange={(e) => setLon(e.target.value)}
-                />
-              </div>
-              <div className="btnrow">
-                <button className="btn" onClick={pickGPS} disabled={busy}>
-                  {busy ? "Locating…" : "Get current GPS"}
-                </button>
-                <button className="btn primary" onClick={addFavorite} disabled={busy}>
-                  Save favorite
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="grid2">
-              <div>
-                <label className="lbl">Latitude</label>
-                <input
-                  className="input"
-                  placeholder="e.g. 51.924000"
-                  value={lat}
-                  onChange={(e) => setLat(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="lbl">Longitude</label>
-                <input
-                  className="input"
-                  placeholder="e.g. 4.479000"
-                  value={lon}
-                  onChange={(e) => setLon(e.target.value)}
-                />
-              </div>
-              <div className="btnrow">
-                <button className="btn primary" onClick={addFavorite}>
-                  Save favorite
-                </button>
-              </div>
-            </div>
-          )}
+                {nonEmpty.map(([name, data]) => (
+                  <div key={name} style={{ marginLeft: 6, marginBottom: 6 }}>
+                    <div style={{ fontWeight: 600 }}>{name} — {fmtClock(data?.ms || 0)}</div>
+                    {(data?.items?.length || 0) > 0 && (
+                      <ul style={{ marginTop: 2, marginBottom: 0 }}>
+                        {data.items.map(it => (
+                          <li key={it.id}>
+                            {it.title || "(no title)"} — {it.minutes} min {it.billable ? "• billable" : "• non-billable"}{it.wbso ? " • WBSO" : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
 
-          {msg && <div className="muted">{msg}</div>}
+                {trips.length > 0 && (
+                  <div style={{ marginTop: 8, marginLeft: 6 }}>
+                    <div style={{ fontWeight: 600 }}>Trips</div>
+                    <ul style={{ marginTop: 2, marginBottom: 0 }}>
+                      {trips.map((leg, i) => (
+                        <li key={leg.id || i}>
+                          <strong>Leg {i + 1}</strong> • {leg.date || ""} • {Number.isFinite(leg.km) ? leg.km.toFixed(1) : leg.km} km
+                          {leg.startName ? ` • ${leg.startName}` : ""}{leg.endName ? ` → ${leg.endName}` : ""}{leg.note ? ` • ${leg.note}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-          {/* List existing favorites */}
-          {favorites.length > 0 ? (
-            <div className="leglist" style={{ marginTop: 6 }}>
-              {favorites.map((f) => (
-                <div key={f.id} className="legcard">
-                  <div>
-                    <div className="title">{f.name}</div>
-                    <div className="muted">
-                      {f.lat.toFixed(6)}, {f.lon.toFixed(6)}
+                {receipts.length > 0 && (
+                  <div style={{ marginTop: 10, marginLeft: 6 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Receipts — € {sumReceipts.toFixed(2)}</div>
+                    <div className="thumbs-row">
+                      {receipts.map(r => (
+                        <div key={r.id} className="thumb-mini" title={`${r.merchant || ""} — € ${Number(r.total || 0).toFixed(2)}`}>
+                          {r.thumb ? <img src={r.thumb} alt="receipt" /> : <div className="muted">no image</div>}
+                          <div className="muted ellipsis">{r.merchant || "—"} • € {Number(r.total || 0).toFixed(2)}</div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <button className="btn ghost" onClick={() => removeFavorite(f.id)}>
-                    Delete
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="muted">No favorites yet.</div>
-          )}
-        </div>
+                )}
+
+                <hr style={{ borderColor: "rgba(148,163,184,.18)", marginTop: 10 }} />
+              </div>
+            );
+          })
+        )}
       </Card>
     </div>
   );

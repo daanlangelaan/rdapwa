@@ -2,12 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import Card from "../components/Card";
 import WorkTimer from "../components/WorkTimer";
 import TravelPopup from "../components/TravelPopup";
-
-const DAYLOG_KEY = "rda.daylog.v1";
-const TRIPS_KEY = "rda.trips.today";
-const ACTIVE_TRIP_KEY = "rda.trip.active";
-const RECEIPTS_KEY = "rda.receipts.v1";
-const CURRENT_PROJECT_KEY = "rda.project.current";
+import UserChip from "../components/UserChip";
+import { getCurrentUser } from "../lib/users";
+import { keys, loadJSON, saveJSON } from "../lib/ns";
 
 const fmtClock = (ms) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -16,50 +13,53 @@ const fmtClock = (ms) => {
   const ss = String(s % 60).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
 };
-const loadJSON = (k, fb) => {
-  try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(fb)); }
-  catch { return fb; }
-};
-const saveJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const isoDate = (d = new Date()) => new Date(d).toISOString().slice(0, 10);
 
 export default function Home() {
-  // Project selectie (bewaar ook in LS zodat andere pagina’s het default project weten)
-  const [project, setProject] = useState(() => {
-    return localStorage.getItem(CURRENT_PROJECT_KEY) || "Project A";
-  });
+  const user = getCurrentUser();              // ← active user
+  const K = {
+    TRIPS: keys.trips(user.id),
+    ACTIVE: keys.activeTrip(user.id),
+    DAYLOG: keys.daylog(user.id),
+    RECEIPTS: keys.receipts(user.id),
+    PROJECT: keys.projectCurrent(user.id),
+  };
+
+  const [project, setProject] = useState(() => localStorage.getItem(K.PROJECT) || "Project A");
   const projects = ["Project A", "Project B", "RDM Retrofit"];
+  useEffect(() => localStorage.setItem(K.PROJECT, project), [K.PROJECT, project]);
 
-  useEffect(() => {
-    localStorage.setItem(CURRENT_PROJECT_KEY, project);
-  }, [project]);
-
-  // Travel popup & status
   const [showTravel, setShowTravel] = useState(false);
-  const [legsToday, setLegsToday] = useState(() => loadJSON(TRIPS_KEY, []));
-  const [activeLeg, setActiveLeg] = useState(() => loadJSON(ACTIVE_TRIP_KEY, null));
+  const [legsToday, setLegsToday] = useState(() => loadJSON(K.TRIPS, []));
+  const [activeLeg, setActiveLeg] = useState(() => loadJSON(K.ACTIVE, null));
 
+  // Re-sync on storage or user change
   useEffect(() => {
     const sync = () => {
-      setLegsToday(loadJSON(TRIPS_KEY, []));
-      setActiveLeg(loadJSON(ACTIVE_TRIP_KEY, null));
+      setLegsToday(loadJSON(K.TRIPS, []));
+      setActiveLeg(loadJSON(K.ACTIVE, null));
     };
+    const onUser = () => { window.location.reload(); };
     window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, []);
+    window.addEventListener("rda:userChanged", onUser);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("rda:userChanged", onUser);
+    };
+  }, [K.TRIPS, K.ACTIVE]);
 
   useEffect(() => {
     if (!showTravel) {
-      setLegsToday(loadJSON(TRIPS_KEY, []));
-      setActiveLeg(loadJSON(ACTIVE_TRIP_KEY, null));
+      setLegsToday(loadJSON(K.TRIPS, []));
+      setActiveLeg(loadJSON(K.ACTIVE, null));
     }
-  }, [showTravel]);
+  }, [showTravel, K.TRIPS, K.ACTIVE]);
 
   const openTravel = () => setShowTravel(true);
 
-  // END DAY: voeg receipts van deze dag + dit project toe, wis daarna uit de lijst
+  // END DAY also bundles receipts for current user + project + today
   const endDay = async () => {
-    // 1) Summary uit WorkTimer
+    // 1) Ask WorkTimer for summary (per user internally)
     const summary = await new Promise((resolve) => {
       const onSummary = (e) => {
         window.removeEventListener("rda:summary", onSummary);
@@ -69,9 +69,9 @@ export default function Home() {
       window.dispatchEvent(new CustomEvent("rda:requestSummary"));
     });
 
-    // 2) Trips + Receipts (filter op vandaag + huidig project)
-    const trips = loadJSON(TRIPS_KEY, []);
-    const allReceipts = loadJSON(RECEIPTS_KEY, []);
+    // 2) Pull trips + receipts
+    const trips = loadJSON(K.TRIPS, []);
+    const allReceipts = loadJSON(K.RECEIPTS, []);
     const today = isoDate();
     const inScope = allReceipts.filter((r) => {
       const rDate = (r.fields?.date && r.fields.date.slice(0, 10)) ||
@@ -79,21 +79,20 @@ export default function Home() {
       const rProject = r.project || project;
       return r.status === "done" && rProject === project && rDate === today;
     });
-
-    // Minimal payload (kleine thumb + kernvelden)
     const receiptsPayload = inScope.map((r) => ({
       id: r.id,
       merchant: r.fields?.merchant || "",
       total: Number(r.fields?.total || 0),
       date: r.fields?.date || (r.createdAt ? r.createdAt.slice(0, 10) : today),
       project: r.project || project,
-      thumb: r.imageDataUrl, // PWA-opslaan is ok; backend kan ‘m uploaden naar Asana
+      thumb: r.imageDataUrl,
     }));
 
-    // 3) Daylog entry opslaan
+    // 3) Store daylog entry
     const entry = {
       id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
       date: today,
+      user: { id: user.id, name: user.name, email: user.email },
       project,
       totalMs: summary.totalMs || 0,
       perActivity: summary.perActivity || {},
@@ -101,21 +100,19 @@ export default function Home() {
       receipts: receiptsPayload,
       createdAt: new Date().toISOString(),
     };
-    const log = [entry, ...loadJSON(DAYLOG_KEY, [])].slice(0, 90);
-    saveJSON(DAYLOG_KEY, log);
+    const log = [entry, ...loadJSON(K.DAYLOG, [])].slice(0, 90);
+    saveJSON(K.DAYLOG, log);
 
-    // 4) Opruimen: trips + actieve trip + receipts van vandaag voor dit project
+    // 4) Cleanup
     const remaining = allReceipts.filter((r) => !inScope.find((x) => x.id === r.id));
-    saveJSON(RECEIPTS_KEY, remaining);
-    localStorage.removeItem(TRIPS_KEY);
-    localStorage.removeItem(ACTIVE_TRIP_KEY);
+    saveJSON(K.RECEIPTS, remaining);
+    localStorage.removeItem(K.TRIPS);
+    localStorage.removeItem(K.ACTIVE);
 
-    // 5) WorkTimer resetten + feedback
     window.dispatchEvent(new CustomEvent("rda:endDay"));
     alert(
-      `End of day saved.\nTotal: ${fmtClock(entry.totalMs)}\nTrips: ${trips.length}\nReceipts: ${receiptsPayload.length}`
+      `End of day saved for ${user.name}.\nTotal: ${fmtClock(entry.totalMs)}\nTrips: ${trips.length}\nReceipts: ${receiptsPayload.length}`
     );
-
     setLegsToday([]);
     setActiveLeg(null);
   };
@@ -129,23 +126,26 @@ export default function Home() {
 
   return (
     <div className="page">
-      <Card title="RDA Mobile • MVP" subtitle="tap an activity to switch • Travel opens trips popup">
-        <div className="grid2">
-          <div>
-            <label className="lbl">Project</label>
-            <select className="select" value={project} onChange={(e) => setProject(e.target.value)}>
-              {projects.map((p) => (<option key={p} value={p}>{p}</option>))}
-            </select>
-          </div>
-          <div>
-            <label className="lbl">Today</label>
-            <div className="muted">
-              Trips: {legsToday.length} {activeLeg ? `• Active: ${activeLegText}` : "• Active: none"}
+      <Card title="RDA Mobile • MVP (multi-user)" subtitle={`Logged in: ${user.name}`}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center" }}>
+          <div className="grid2" style={{ flex: 1 }}>
+            <div>
+              <label className="lbl">Project</label>
+              <select className="select" value={project} onChange={(e) => setProject(e.target.value)}>
+                {projects.map((p) => (<option key={p} value={p}>{p}</option>))}
+              </select>
             </div>
-            <div className="btnrow" style={{ marginTop: 6 }}>
-              <button className="btn" onClick={openTravel}>Open Travel</button>
+            <div>
+              <label className="lbl">Trips today</label>
+              <div className="muted">
+                {legsToday.length} {activeLeg ? `• Active: ${activeLegText}` : "• Active: none"}
+              </div>
+              <div className="btnrow" style={{ marginTop: 6 }}>
+                <button className="btn" onClick={openTravel}>Open Travel</button>
+              </div>
             </div>
           </div>
+          <UserChip />
         </div>
       </Card>
 
@@ -160,8 +160,8 @@ export default function Home() {
         <TravelPopup
           onClose={() => setShowTravel(false)}
           onSaveLeg={() => {
-            setLegsToday(loadJSON(TRIPS_KEY, []));
-            setActiveLeg(loadJSON(ACTIVE_TRIP_KEY, null));
+            setLegsToday(loadJSON(K.TRIPS, []));
+            setActiveLeg(loadJSON(K.ACTIVE, null));
             setShowTravel(false);
           }}
         />

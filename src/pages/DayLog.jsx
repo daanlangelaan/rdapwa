@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Card from "../components/Card";
-
-const DAYLOG_KEY = "rda.daylog.v1";
+import { getCurrentUser } from "../lib/users";
+import { keys } from "../lib/ns";
 
 const fmtClock = (ms) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -12,12 +12,12 @@ const fmtClock = (ms) => {
 };
 
 export default function DayLog() {
+  const user = getCurrentUser();
+  const DAYLOG_KEY = keys.daylog(user.id);
+
   const [log, setLog] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(DAYLOG_KEY) || "[]");
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem(DAYLOG_KEY) || "[]"); }
+    catch { return []; }
   });
 
   useEffect(() => {
@@ -26,22 +26,25 @@ export default function DayLog() {
         try { setLog(JSON.parse(e.newValue || "[]")); } catch {}
       }
     };
+    const onUser = () => window.location.reload();
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+    window.addEventListener("rda:userChanged", onUser);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("rda:userChanged", onUser);
+    };
+  }, [DAYLOG_KEY]);
 
   return (
     <div className="page">
-      <Card title="Day log" subtitle="Gesloten dagen met activiteiten, trips en receipts" wide>
+      <Card title="Day log" subtitle={`Closed days for ${user.name}`} wide>
         {log.length === 0 ? (
           <div className="muted">Nog geen daglogs opgeslagen.</div>
         ) : (
           log.map((entry) => {
             const perActivity = entry.perActivity || {};
-            const nonEmptyActivities = Object.entries(perActivity).filter(
-              ([, data]) => (data?.ms || 0) > 0 || (data?.items?.length || 0) > 0
-            );
-            const hasTrips = (entry.trips || []).length > 0;
+            const nonEmpty = Object.entries(perActivity).filter(([, d]) => (d?.ms || 0) > 0 || (d?.items?.length || 0) > 0);
+            const trips = entry.trips || [];
             const receipts = entry.receipts || [];
             const sumReceipts = receipts.reduce((a, r) => a + (Number(r.total) || 0), 0);
 
@@ -50,23 +53,17 @@ export default function DayLog() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                   <div className="title">{entry.date} • {entry.project}</div>
                   <span className="badge">Total {fmtClock(entry.totalMs || 0)}</span>
-                  {receipts.length > 0 && (
-                    <span className="badge">Receipts € {sumReceipts.toFixed(2)}</span>
-                  )}
+                  {receipts.length > 0 && <span className="badge">Receipts € {sumReceipts.toFixed(2)}</span>}
                 </div>
 
-                {nonEmptyActivities.map(([name, data]) => (
+                {nonEmpty.map(([name, data]) => (
                   <div key={name} style={{ marginLeft: 6, marginBottom: 6 }}>
-                    <div style={{ fontWeight: 600 }}>
-                      {name} — {fmtClock(data?.ms || 0)}
-                    </div>
+                    <div style={{ fontWeight: 600 }}>{name} — {fmtClock(data?.ms || 0)}</div>
                     {(data?.items?.length || 0) > 0 && (
                       <ul style={{ marginTop: 2, marginBottom: 0 }}>
-                        {data.items.map((it) => (
+                        {data.items.map(it => (
                           <li key={it.id}>
-                            {it.title || "(no title)"} — {it.minutes} min{" "}
-                            {it.billable ? "• billable" : "• non-billable"}
-                            {it.wbso ? " • WBSO" : ""}
+                            {it.title || "(no title)"} — {it.minutes} min {it.billable ? "• billable" : "• non-billable"}{it.wbso ? " • WBSO" : ""}
                           </li>
                         ))}
                       </ul>
@@ -74,17 +71,14 @@ export default function DayLog() {
                   </div>
                 ))}
 
-                {hasTrips && (
+                {trips.length > 0 && (
                   <div style={{ marginTop: 8, marginLeft: 6 }}>
                     <div style={{ fontWeight: 600 }}>Trips</div>
                     <ul style={{ marginTop: 2, marginBottom: 0 }}>
-                      {entry.trips.map((leg, idx) => (
-                        <li key={leg.id || idx}>
-                          <strong>Leg {idx + 1}</strong> • {leg.date || ""} •{" "}
-                          {Number.isFinite(leg.km) ? leg.km.toFixed(1) : leg.km} km
-                          {leg.startName ? ` • ${leg.startName}` : ""}{" "}
-                          {leg.endName ? `→ ${leg.endName}` : ""}
-                          {leg.note ? ` • ${leg.note}` : ""}
+                      {trips.map((leg, i) => (
+                        <li key={leg.id || i}>
+                          <strong>Leg {i + 1}</strong> • {leg.date || ""} • {Number.isFinite(leg.km) ? leg.km.toFixed(1) : leg.km} km
+                          {leg.startName ? ` • ${leg.startName}` : ""}{leg.endName ? ` → ${leg.endName}` : ""}{leg.note ? ` • ${leg.note}` : ""}
                         </li>
                       ))}
                     </ul>
@@ -93,16 +87,12 @@ export default function DayLog() {
 
                 {receipts.length > 0 && (
                   <div style={{ marginTop: 10, marginLeft: 6 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>
-                      Receipts — € {sumReceipts.toFixed(2)}
-                    </div>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Receipts — € {sumReceipts.toFixed(2)}</div>
                     <div className="thumbs-row">
-                      {receipts.map((r) => (
+                      {receipts.map(r => (
                         <div key={r.id} className="thumb-mini" title={`${r.merchant || ""} — € ${Number(r.total || 0).toFixed(2)}`}>
                           {r.thumb ? <img src={r.thumb} alt="receipt" /> : <div className="muted">no image</div>}
-                          <div className="muted ellipsis">
-                            {r.merchant || "—"} • € {Number(r.total || 0).toFixed(2)}
-                          </div>
+                          <div className="muted ellipsis">{r.merchant || "—"} • € {Number(r.total || 0).toFixed(2)}</div>
                         </div>
                       ))}
                     </div>
