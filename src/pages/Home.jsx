@@ -6,6 +6,8 @@ import TravelPopup from "../components/TravelPopup";
 const DAYLOG_KEY = "rda.daylog.v1";
 const TRIPS_KEY = "rda.trips.today";
 const ACTIVE_TRIP_KEY = "rda.trip.active";
+const RECEIPTS_KEY = "rda.receipts.v1";
+const CURRENT_PROJECT_KEY = "rda.project.current";
 
 const fmtClock = (ms) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -18,16 +20,25 @@ const loadJSON = (k, fb) => {
   try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(fb)); }
   catch { return fb; }
 };
+const saveJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const isoDate = (d = new Date()) => new Date(d).toISOString().slice(0, 10);
 
 export default function Home() {
-  const [project, setProject] = useState("Project A");
+  // Project selectie (bewaar ook in LS zodat andere pagina’s het default project weten)
+  const [project, setProject] = useState(() => {
+    return localStorage.getItem(CURRENT_PROJECT_KEY) || "Project A";
+  });
   const projects = ["Project A", "Project B", "RDM Retrofit"];
 
+  useEffect(() => {
+    localStorage.setItem(CURRENT_PROJECT_KEY, project);
+  }, [project]);
+
+  // Travel popup & status
   const [showTravel, setShowTravel] = useState(false);
   const [legsToday, setLegsToday] = useState(() => loadJSON(TRIPS_KEY, []));
   const [activeLeg, setActiveLeg] = useState(() => loadJSON(ACTIVE_TRIP_KEY, null));
 
-  // Sync UI with storage changes
   useEffect(() => {
     const sync = () => {
       setLegsToday(loadJSON(TRIPS_KEY, []));
@@ -44,11 +55,11 @@ export default function Home() {
     }
   }, [showTravel]);
 
-  // Allow opening popup from WorkTimer (when switching to Travel)
   const openTravel = () => setShowTravel(true);
 
-  // End day: pull summary → write daylog → clear today → reset WT
+  // END DAY: voeg receipts van deze dag + dit project toe, wis daarna uit de lijst
   const endDay = async () => {
+    // 1) Summary uit WorkTimer
     const summary = await new Promise((resolve) => {
       const onSummary = (e) => {
         window.removeEventListener("rda:summary", onSummary);
@@ -58,26 +69,52 @@ export default function Home() {
       window.dispatchEvent(new CustomEvent("rda:requestSummary"));
     });
 
+    // 2) Trips + Receipts (filter op vandaag + huidig project)
     const trips = loadJSON(TRIPS_KEY, []);
+    const allReceipts = loadJSON(RECEIPTS_KEY, []);
+    const today = isoDate();
+    const inScope = allReceipts.filter((r) => {
+      const rDate = (r.fields?.date && r.fields.date.slice(0, 10)) ||
+                    (r.createdAt ? r.createdAt.slice(0, 10) : today);
+      const rProject = r.project || project;
+      return r.status === "done" && rProject === project && rDate === today;
+    });
 
+    // Minimal payload (kleine thumb + kernvelden)
+    const receiptsPayload = inScope.map((r) => ({
+      id: r.id,
+      merchant: r.fields?.merchant || "",
+      total: Number(r.fields?.total || 0),
+      date: r.fields?.date || (r.createdAt ? r.createdAt.slice(0, 10) : today),
+      project: r.project || project,
+      thumb: r.imageDataUrl, // PWA-opslaan is ok; backend kan ‘m uploaden naar Asana
+    }));
+
+    // 3) Daylog entry opslaan
     const entry = {
-      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-      date: new Date().toISOString().slice(0, 10),
+      id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+      date: today,
       project,
       totalMs: summary.totalMs || 0,
       perActivity: summary.perActivity || {},
       trips,
+      receipts: receiptsPayload,
       createdAt: new Date().toISOString(),
     };
     const log = [entry, ...loadJSON(DAYLOG_KEY, [])].slice(0, 90);
-    localStorage.setItem(DAYLOG_KEY, JSON.stringify(log));
+    saveJSON(DAYLOG_KEY, log);
 
+    // 4) Opruimen: trips + actieve trip + receipts van vandaag voor dit project
+    const remaining = allReceipts.filter((r) => !inScope.find((x) => x.id === r.id));
+    saveJSON(RECEIPTS_KEY, remaining);
     localStorage.removeItem(TRIPS_KEY);
     localStorage.removeItem(ACTIVE_TRIP_KEY);
 
+    // 5) WorkTimer resetten + feedback
     window.dispatchEvent(new CustomEvent("rda:endDay"));
-
-    alert(`End of day saved.\nTotal: ${fmtClock(entry.totalMs)}\nTrips: ${trips.length}`);
+    alert(
+      `End of day saved.\nTotal: ${fmtClock(entry.totalMs)}\nTrips: ${trips.length}\nReceipts: ${receiptsPayload.length}`
+    );
 
     setLegsToday([]);
     setActiveLeg(null);
@@ -125,6 +162,7 @@ export default function Home() {
           onSaveLeg={() => {
             setLegsToday(loadJSON(TRIPS_KEY, []));
             setActiveLeg(loadJSON(ACTIVE_TRIP_KEY, null));
+            setShowTravel(false);
           }}
         />
       )}
